@@ -6,6 +6,7 @@ import leakcanary.internal.navigation.onScreenExiting
 import leakcanary.internal.friendly.checkMainThread
 import leakcanary.internal.friendly.mainHandler
 import java.util.concurrent.Executors
+import shark.SharkLog
 
 internal object Io {
 
@@ -63,5 +64,6 @@ internal object Io {
 }
 
 internal fun View.executeOnIo(block: OnIo.() -> Unit) {
+  SharkLog.d { "this is executeOnIo, ${Thread.currentThread().name}" }
   Io.execute(this, block)
 }

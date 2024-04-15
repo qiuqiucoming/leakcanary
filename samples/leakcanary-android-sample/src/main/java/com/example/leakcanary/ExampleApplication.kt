@@ -36,8 +36,12 @@ open class ExampleApplication : Application() {
       StrictMode.ThreadPolicy.Builder()
         .detectAll()
         .penaltyLog()
-        .penaltyDeath()
+        //.penaltyDeath()
         .build()
     )
+//    StrictMode.setVmPolicy(
+//      StrictMode.VmPolicy.Builder()
+//        .detectAll().penaltyLog().build()
+//    )
   }
 }

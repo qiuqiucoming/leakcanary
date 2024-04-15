@@ -72,6 +72,7 @@ internal object HeapDumpControl {
       // Can't use a resource, we don't have an Application instance when not installed
       SilentNope { "AppWatcher is not installed." }
     } else if (!InternalLeakCanary.dumpEnabledInAboutScreen) {
+      /// 通过AboutScreen界面配置为不允许dump
       NotifyingNope {
         app.getString(R.string.leak_canary_heap_dump_disabled_from_ui)
       }
@@ -89,6 +90,7 @@ internal object HeapDumpControl {
         )
       }
     } else if (!config.dumpHeapWhenDebugging && DebuggerControl.isDebuggerAttached) {
+      /// config设置了在debug attach模式下不允许dump
       backgroundUpdateHandler.postDelayed({
         iCanHasHeap()
       }, 20_000L)
@@ -96,6 +98,7 @@ internal object HeapDumpControl {
     } else Yup
 
     synchronized(this) {
+      // latest用来控制只有在首次iCanHasHeap从不支持变为支持的时候，会进行一次retained object的check尝试
       if (::latest.isInitialized && dumpHeap is Yup && latest is Nope) {
         InternalLeakCanary.scheduleRetainedObjectCheck()
       }

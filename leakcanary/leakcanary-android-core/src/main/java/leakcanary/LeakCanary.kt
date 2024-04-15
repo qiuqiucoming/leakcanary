@@ -50,7 +50,7 @@ object LeakCanary {
      *
      * Defaults to false.
      */
-    val dumpHeapWhenDebugging: Boolean = false,
+    val dumpHeapWhenDebugging: Boolean = true,
     /**
      * When the app is visible, LeakCanary will wait for at least
      * [retainedVisibleThreshold] retained instances before dumping the heap. Dumping the heap
@@ -190,10 +190,10 @@ object LeakCanary {
         if (InternalLeakCanary.formFactor == TV) TvEventListener else NotificationEventListener
       },
       when {
-          RemoteWorkManagerHeapAnalyzer.remoteLeakCanaryServiceInClasspath ->
-            RemoteWorkManagerHeapAnalyzer
-          WorkManagerHeapAnalyzer.validWorkManagerInClasspath -> WorkManagerHeapAnalyzer
-          else -> BackgroundThreadHeapAnalyzer
+        RemoteWorkManagerHeapAnalyzer.remoteLeakCanaryServiceInClasspath ->
+          RemoteWorkManagerHeapAnalyzer
+        WorkManagerHeapAnalyzer.validWorkManagerInClasspath -> WorkManagerHeapAnalyzer
+        else -> BackgroundThreadHeapAnalyzer
       }
     ),
 

@@ -3,6 +3,9 @@ package shark.internal
 /**
  * Provides read access to a sub part of a larger array.
  */
+/**
+ * 用来描述整个records字节数组的某个位置的子数组信息,位置信息由rangeStart来体现，主要用于从该位置读取信息
+ */
 internal class ByteSubArray(
   private val array: ByteArray,
   private val rangeStart: Int,

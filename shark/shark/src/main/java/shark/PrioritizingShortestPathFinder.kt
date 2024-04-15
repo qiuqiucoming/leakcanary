@@ -23,6 +23,7 @@ import shark.internal.invalidObjectIdErrorMessage
  * identified as "to visit last" and then visiting them as needed if no path is
  * found.
  */
+// ShortestPathFinder真正的实现类
 class PrioritizingShortestPathFinder private constructor(
   private val graph: HeapGraph,
   private val listener: Event.Listener,
@@ -139,6 +140,7 @@ class PrioritizingShortestPathFinder private constructor(
   override fun findShortestPathsFromGcRoots(
     leakingObjectIds: Set<Long>
   ): PathFindingResults {
+    SharkLog.d { "findShortestPathsFromGcRoots leakingObjectIds size ${leakingObjectIds.size}" }
     listener.onEvent(StartedFindingPathsToRetainedObjects)
     // Estimate of how many objects we'll visit. This is a conservative estimate, we should always
     // visit more than that but this limits the number of early array growths.
@@ -149,7 +151,6 @@ class PrioritizingShortestPathFinder private constructor(
       computeRetainedHeapSize = computeRetainedHeapSize,
       estimatedVisitedObjects = estimatedVisitedObjects
     )
-
     return state.findPathsFromGcRoots()
   }
 
@@ -161,12 +162,15 @@ class PrioritizingShortestPathFinder private constructor(
   }
 
   private fun State.findPathsFromGcRoots(): PathFindingResults {
+    // 先把默认的GC节点推进去
     enqueueGcRoots()
 
     val shortestPathsToLeakingObjects = mutableListOf<ReferencePathNode>()
     visitingQueue@ while (queuesNotEmpty) {
+      // 开始从GC节点往下遍历
       val node = poll()
       if (leakingObjectIds.contains(node.objectId)) {
+        // 把发生泄漏的对象添加进来
         shortestPathsToLeakingObjects.add(node)
         // Found all refs, stop searching (unless computing retained size)
         if (shortestPathsToLeakingObjects.size == leakingObjectIds.size()) {
@@ -178,6 +182,7 @@ class PrioritizingShortestPathFinder private constructor(
         }
       }
 
+      // 找到节点的heap对象，上面有关于这个对象的所有节点信息
       val heapObject = try {
         graph.findObjectById(node.objectId)
       } catch (objectIdNotFound: IllegalArgumentException) {
@@ -185,15 +190,25 @@ class PrioritizingShortestPathFinder private constructor(
         // but when it does happen, let's at least display how we got there.
         throw RuntimeException(graph.invalidObjectIdErrorMessage(node), objectIdNotFound)
       }
+      // TODO 调试信息
+      if (leakingObjectIds.contains(node.objectId)) {
+        SharkLog.d { "findPathsFromGcRoots leak heapObject: ${heapObject.asClass?.name}" }
+      }
       objectReferenceReader.read(heapObject).forEach { reference ->
+        // 遍历该节点的所有引用，
+        // 这里只是利用这对引用关系生成一个child node信息，貌似这个节点是个新的节点，
+        // 但是后面插入到dominator tree上时，如果发现有objectId相同的节点，则会有另一番处理，
+        // 这个处理就是帮助dominator tree 调整node的位置
         val newNode = ChildNode(
           objectId = reference.valueObjectId,
           parent = node,
           lazyDetailsResolver = reference.lazyDetailsResolver
         )
+        // 将该对象插入队列
         enqueue(newNode, isLowPriority = reference.isLowPriority)
       }
     }
+    SharkLog.d { "findPathsFromGcRoots shortestPathsToLeakingObjects size: ${shortestPathsToLeakingObjects.size}" }
     return PathFindingResults(
       shortestPathsToLeakingObjects,
       if (visitTracker is Dominated) visitTracker.dominatorTree else null
@@ -245,6 +260,7 @@ class PrioritizingShortestPathFinder private constructor(
 
     // Note: when computing dominators, this has a side effects of updating
     // the dominator for node.objectId.
+    // 尝试更新objectId的dominator，当然只是尝试，因为可能已经在旧的dominator列表里了
     val alreadyEnqueued = visitTracker.visited(node.objectId, parentObjectId)
 
     val visitLast = visitingLast || isLowPriority

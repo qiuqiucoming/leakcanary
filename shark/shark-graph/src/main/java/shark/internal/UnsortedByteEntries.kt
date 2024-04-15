@@ -49,6 +49,7 @@ internal class UnsortedByteEntries(
     }
     val entries = entries!!
     // Sort entries by keys, which are ids of 4 or 8 bytes.
+    /// 排序，采用的是预排序+二分法的方法进行排序，时间复杂度O(n*logn)
     ByteArrayTimSort.sort(entries, 0, assigned, bytesPerEntry) {
         entrySize, o1Array, o1Index, o2Array, o2Index ->
       if (longIdentifiers) {

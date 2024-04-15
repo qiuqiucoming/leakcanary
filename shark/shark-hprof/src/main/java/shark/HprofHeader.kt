@@ -50,16 +50,20 @@ data class HprofHeader(
       require(!source.exhausted()) {
         throw IllegalArgumentException("Source has no available bytes")
       }
+      // 以0作为起始
       val endOfVersionString = source.indexOf(0)
+      // 读取版本号
       val versionName = source.readUtf8(endOfVersionString)
 
       val version = supportedVersions[versionName]
       checkNotNull(version) {
         "Unsupported Hprof version [$versionName] not in supported list ${supportedVersions.keys}"
       }
-      // Skip the 0 at the end of the version string.
+      // 版本号以0结尾，跳过这个0
       source.skip(1)
+      // 读取长度
       val identifierByteSize = source.readInt()
+      // 读取时间戳
       val heapDumpTimestamp = source.readLong()
       return HprofHeader(heapDumpTimestamp, version, identifierByteSize)
     }

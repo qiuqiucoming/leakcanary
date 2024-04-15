@@ -11,6 +11,9 @@ import shark.internal.hppc.to
  *
  * [get] and [contains] perform a binary search to locate a specific entry by key.
  */
+/**
+ * 管理整个records信息，是一个根据key值排序后的数组，并提供一个根据key值返回对应位置上subArray的映射功能
+ */
 internal class SortedBytesMap(
   private val longIdentifiers: Boolean,
   private val bytesPerValue: Int,
@@ -34,6 +37,7 @@ internal class SortedBytesMap(
   }
 
   fun getAtIndex(keyIndex: Int): ByteSubArray {
+    // 第keyIndex+1组<key, entry>的entry索引地址
     val valueIndex = keyIndex * bytesPerEntry + bytesPerKey
     return ByteSubArray(sortedEntries, valueIndex, bytesPerValue, longIdentifiers)
   }
@@ -51,6 +55,7 @@ internal class SortedBytesMap(
       }
   }
 
+  // 二分法查找key对应的索引位置，如果没有找到则返回一个负数
   private fun binarySearch(
     key: Long
   ): Int {

@@ -90,22 +90,24 @@ class RealLeakTracerFactory constructor(
   )
 
   private fun FindLeakInput.findLeaks(leakingObjectIds: Set<Long>): LeaksAndUnreachableObjects {
+    // 生成引用节点树，并获取所有泄漏对象的引用路径信息
     val pathFindingResults =
       shortestPathFinder.findShortestPathsFromGcRoots(leakingObjectIds)
-
+    // 剩下的泄漏节点为GCRoot不可达节点
     val unreachableObjects = findUnreachableObjects(pathFindingResults, leakingObjectIds)
-
+    // 根据泄漏节点生成详细的path信息
     val shortestPaths =
       deduplicateShortestPaths(pathFindingResults.pathsToLeakingObjects)
-
+    // 根据默认的inspectors来生成相应的report信息
     val inspectedObjectsByPath = inspectObjects(shortestPaths)
-
+    // 计算每个节点泄漏的retained大小
     val retainedSizes =
       if (pathFindingResults.dominatorTree != null) {
         computeRetainedSizes(inspectedObjectsByPath, pathFindingResults.dominatorTree)
       } else {
         null
       }
+    // 利用上面的内容生成trace信息
     val (applicationLeaks, libraryLeaks) = buildLeakTraces(
       shortestPaths, inspectedObjectsByPath, retainedSizes
     )
@@ -120,6 +122,8 @@ class RealLeakTracerFactory constructor(
       pathFindingResults.pathsToLeakingObjects.map { it.objectId }.toSet()
 
     val unreachableLeakingObjectIds = leakingObjectIds - reachableLeakingObjectIds
+
+    SharkLog.d { "findUnreachableObjects unreachableLeakingObjectIds size: ${unreachableLeakingObjectIds.size}" }
 
     val unreachableObjectReporters = unreachableLeakingObjectIds.map { objectId ->
       ObjectReporter(heapObject = graph.findObjectById(objectId))
@@ -345,6 +349,7 @@ class RealLeakTracerFactory constructor(
     inspectedObjectsByPath: List<List<InspectedObject>>,
     dominatorTree: DominatorTree
   ): Map<Long, Pair<Int, Int>> {
+    SharkLog.d { "computeRetainedSizes inspectedObjectsByPath ${inspectedObjectsByPath}" }
     val nodeObjectIds = inspectedObjectsByPath.flatMap { inspectedObjects ->
       // TODO Stop at the first leaking object
       inspectedObjects.filter { it.leakingStatus == UNKNOWN || it.leakingStatus == LEAKING }

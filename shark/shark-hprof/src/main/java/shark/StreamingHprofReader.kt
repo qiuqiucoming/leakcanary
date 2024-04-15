@@ -63,14 +63,18 @@ class StreamingHprofReader private constructor(
       val intByteSize = INT.byteSize
       val identifierByteSize = reader.sizeOf(REFERENCE_HPROF_TYPE)
 
+      // 每一个recode结构：1字节tag + 4字节时间戳 + 4字节长度 + len字节body
       while (!source.exhausted()) {
         // type of the record
+        // 读取tag类型
         val tag = reader.readUnsignedByte()
 
         // number of microseconds since the time stamp in the header
+        // 跳过时间戳
         reader.skip(intByteSize)
 
         // number of bytes that follow and belong to this record
+        // 读取长度
         val length = reader.readUnsignedInt()
 
         when (tag) {

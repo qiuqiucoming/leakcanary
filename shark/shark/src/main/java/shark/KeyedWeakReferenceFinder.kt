@@ -32,6 +32,7 @@ object KeyedWeakReferenceFinder : LeakingObjectFinder {
     }
   }
 
+  // 根据类名KeyedWeakReference查找获取泄漏有关的弱引用对象
   internal fun findKeyedWeakReferences(graph: HeapGraph): List<KeyedWeakReferenceMirror> {
     return graph.context.getOrPut(KEYED_WEAK_REFERENCE.name) {
       val keyedWeakReferenceClass = graph.findClassByName("leakcanary.KeyedWeakReference")

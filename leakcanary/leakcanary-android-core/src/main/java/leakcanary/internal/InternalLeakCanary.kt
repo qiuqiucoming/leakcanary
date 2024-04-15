@@ -196,9 +196,18 @@ internal object InternalLeakCanary : (Application) -> Unit, OnObjectRetainedList
   }
 
 
-
+  /**
+   * 这里是正常生命周期触发OnObjectRetainedListener进行leak检测的入口，
+   * 只需要触发之后就会由checkRetainedObjects来进行retained object的循环检测
+   */
   override fun onObjectRetained() = scheduleRetainedObjectCheck()
 
+  /**
+   * 触发retained object check
+   * 该方法的入口有两个:
+   * 1. onObjectRetained，即各相关组件生命周期destroy触发监听回调
+   * 2. 当iCanHaveHeap的条件首次从不满足更新为满足的时候，会尝试一次
+   */
   fun scheduleRetainedObjectCheck() {
     if (this::heapDumpTrigger.isInitialized) {
       heapDumpTrigger.scheduleRetainedObjectCheck()

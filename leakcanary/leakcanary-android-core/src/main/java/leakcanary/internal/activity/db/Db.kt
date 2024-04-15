@@ -5,6 +5,7 @@ import android.view.View
 import leakcanary.internal.activity.db.Db.OnDb
 import leakcanary.internal.activity.db.Io.OnIo
 import leakcanary.internal.activity.db.ScopedLeaksDb.DbOpener
+import shark.SharkLog
 
 internal object Db {
 
@@ -51,5 +52,6 @@ internal object Db {
 }
 
 internal fun View.executeOnDb(block: OnDb.() -> Unit) {
+  SharkLog.d { "this is executeOnDB, ${Thread.currentThread().name}" }
   Db.execute(this, block)
 }

@@ -82,6 +82,7 @@ internal class HprofInMemoryIndex private constructor(
   val primitiveArrayCount: Int
     get() = primitiveArrayIndex.size
 
+  // 根据id和classId获取filed和class的拼接结果
   fun fieldName(
     classId: Long,
     id: Long
@@ -94,6 +95,7 @@ internal class HprofInMemoryIndex private constructor(
     } ?: fieldNameString
   }
 
+  // 根据classId返回className
   fun className(classId: Long): String {
     // String, primitive types
     val classNameStringId = classNames[classId]

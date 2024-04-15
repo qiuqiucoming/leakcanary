@@ -88,19 +88,36 @@ internal class HeapDumpTrigger(
       applicationInvisibleAt = SystemClock.uptimeMillis()
       // Scheduling for after watchDuration so that any destroyed activity has time to become
       // watch and be part of this analysis.
+      /**
+       * 应用变为隐藏之后，不会立即触发leak检测流程，因为可能用户会立即回到应用，
+       * 因此会有一个延时retainedDelayMillis，这段时间也可以等待一些由于应用
+       * 隐藏导致的新的内存泄漏发生。
+       */
       scheduleRetainedObjectCheck(
         delayMillis = AppWatcher.retainedDelayMillis
       )
     }
   }
 
+  /**
+   * 真正检测当前retain object并dump的入口，
+   * 该方法是一个private，
+   * 对外暴露延时函数scheduleRetainedObjectCheck
+   * 该方法对于是否进行dumpHeap之前会进行三个内容的校验：
+   * 1. iCanHasHeap是否满足条件
+   * 2. retained object个数是否达到retained阈值
+   * 3. 距离上一次dumpHeap的时间是否达到dump阈值
+   */
   private fun checkRetainedObjects() {
     val iCanHasHeap = HeapDumpControl.iCanHasHeap()
 
     val config = configProvider()
 
+    // 条件一的校验
     if (iCanHasHeap is Nope) {
+
       if (iCanHasHeap is NotifyingNope) {
+        // 即使不能够dump，也会检测retained object
         // Before notifying that we can't dump heap, let's check if we still have retained object.
         var retainedReferenceCount = retainedObjectTracker.retainedObjectCount
 
@@ -115,6 +132,7 @@ internal class HeapDumpTrigger(
         )
 
         if (wouldDump) {
+          // retained object的数量达到dump的条件，但是由于iCanHasHeap的原因不能dump，因此在这里要通知原因
           val uppercaseReason = nopeReason[0].toUpperCase() + nopeReason.substring(1)
           onRetainInstanceListener.onEvent(DumpingDisabled(uppercaseReason))
           showRetainedCountNotification(
@@ -139,10 +157,12 @@ internal class HeapDumpTrigger(
       retainedReferenceCount = retainedObjectTracker.retainedObjectCount
     }
 
+    // 条件二的校验，满足iCanHasHeap的条件，在这里进行retained object的校验
     if (checkRetainedCount(retainedReferenceCount, config.retainedVisibleThreshold)) return
 
     val now = SystemClock.uptimeMillis()
     val elapsedSinceLastDumpMillis = now - lastHeapDumpUptimeMillis
+    // 条件三的校验，距离上次dump小于一分钟，则需要延时等待，然后再手动触发一次checkRetainedObjects
     if (elapsedSinceLastDumpMillis < WAIT_BETWEEN_HEAP_DUMPS_MILLIS) {
       onRetainInstanceListener.onEvent(DumpHappenedRecently)
       showRetainedCountNotification(
@@ -155,6 +175,10 @@ internal class HeapDumpTrigger(
       return
     }
 
+    // 同时满足：
+    // 1. iCanHasHeap条件
+    // 2. retained object个数达到要求
+    // 3. 同时距离上一次dump也超过了dump时间阈值
     dismissRetainedCountNotification()
     val visibility = if (applicationVisible) "visible" else "not visible"
     dumpHeap(
@@ -169,6 +193,7 @@ internal class HeapDumpTrigger(
     retry: Boolean,
     reason: String
   ) {
+    // 和Shark进行dump信息交互的方式
     val directoryProvider =
       InternalLeakCanary.createLeakDirectoryProvider(InternalLeakCanary.application)
     val heapDumpFile = directoryProvider.newHeapDumpFile()
@@ -178,6 +203,9 @@ internal class HeapDumpTrigger(
       currentEventUniqueId = UUID.randomUUID().toString()
     }
     try {
+      // dump开始前，抛出DumpingHeap事件:
+      // 日志(LogcatEventListener)
+      // 通知(NotificationEventListener)
       InternalLeakCanary.sendEvent(DumpingHeap(currentEventUniqueId!!))
       if (heapDumpFile == null) {
         throw RuntimeException("Could not create heap dump file")
@@ -186,6 +214,7 @@ internal class HeapDumpTrigger(
       val heapDumpUptimeMillis = SystemClock.uptimeMillis()
       KeyedWeakReference.heapDumpUptimeMillis = heapDumpUptimeMillis
       durationMillis = measureDurationMillis {
+        // 默认直接用java的dump方法输出到一个hprof文件
         configProvider().heapDumper.dumpHeap(heapDumpFile)
       }
       if (heapDumpFile.length() == 0L) {
@@ -195,6 +224,10 @@ internal class HeapDumpTrigger(
       lastHeapDumpUptimeMillis = SystemClock.uptimeMillis()
       retainedObjectTracker.clearObjectsTrackedBefore(heapDumpUptimeMillis.milliseconds)
       currentEventUniqueId = UUID.randomUUID().toString()
+      // dump结束后，抛出HeapDump事件:
+      // 日志(LogcatEventListener)
+      // 通知(NotificationEventListener)
+      // 抛给服务进行分析(RemoteWorkManagerHeapAnalyzer)
       InternalLeakCanary.sendEvent(HeapDump(currentEventUniqueId!!, heapDumpFile, durationMillis, reason))
     } catch (throwable: Throwable) {
       InternalLeakCanary.sendEvent(HeapDumpFailed(currentEventUniqueId!!, throwable, retry))
@@ -273,6 +306,17 @@ internal class HeapDumpTrigger(
     }
   }
 
+  /**
+   * 根据当前retained对象的个数，判断下一步动作，
+   * 1. 如果首次检测retained object个数为0，则退出，等待下一次触发
+   * 2. 如果retained object不为0，则在达到阈值之前，会触发循环检测
+   * 该retained object的个数校验在生命周期触发之后，会不停调用，直到达到阈值，进行dumpHeap
+   * @param  retainedKeysCount 当前retained object的数量
+   * @param  retainedVisibleThreshold 当前thredshold阈值
+   * @param  nopeReason 当前不能dump的原因
+   * @return true --- retained数量被清除或者retained数量小于threshold
+   *         false --- retained object的数量达到threshold
+   */
   private fun checkRetainedCount(
     retainedKeysCount: Int,
     retainedVisibleThreshold: Int,
@@ -280,6 +324,7 @@ internal class HeapDumpTrigger(
   ): Boolean {
     val countChanged = lastDisplayedRetainedObjectCount != retainedKeysCount
     lastDisplayedRetainedObjectCount = retainedKeysCount
+    // 如果没有retained object，那么就没有必要继续循环检测，直接退出，等到下一次的触发
     if (retainedKeysCount == 0) {
       if (countChanged) {
         SharkLog.d { "All retained objects have been garbage collected" }
@@ -325,6 +370,7 @@ internal class HeapDumpTrigger(
       }
     }
 
+    // retained object个数没有达到阈值，则继续检测
     if (retainedKeysCount < retainedVisibleThreshold) {
       if (applicationVisible || applicationInvisibleLessThanWatchPeriod) {
         if (countChanged) {
@@ -336,6 +382,7 @@ internal class HeapDumpTrigger(
             R.string.leak_canary_notification_retained_visible, retainedVisibleThreshold
           )
         )
+        // 从这里进入实现反复进行retained object检测
         scheduleRetainedObjectCheck(
           delayMillis = WAIT_FOR_OBJECT_THRESHOLD_MILLIS
         )
@@ -345,9 +392,22 @@ internal class HeapDumpTrigger(
     return false
   }
 
+  /**
+   * 暴露给user调用的检测check + dump的唯一入口，
+   * 这是一次retained object的检测尝试
+   *
+   *  该检测方法的入口：
+   *  1. 相关组件destroy生命周期触发，由scheduleRetainedObjectCheck进入
+   *  2. 应用变为不可见的回调触发，由onApplicationVisibilityChanged进入
+   *  3. 达到dump条件，但是距离上次dump时间没达到阈值，再次触发，由checkRetainedObjects进入
+   *  4. dump异常，如果retry为true，再次尝试
+   *  5. retained object的个数大于0，小于阈值，则继续检测
+   * @param delayMillis 当前距离检测retain object阈值的时间
+   */
   fun scheduleRetainedObjectCheck(
     delayMillis: Long = 0L
   ) {
+    SharkLog.d { "调用scheduleRetainedObjectCheck $delayMillis" }
     val checkCurrentlyScheduledAt = checkScheduledAt
     if (checkCurrentlyScheduledAt > 0) {
       return

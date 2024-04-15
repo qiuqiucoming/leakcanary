@@ -95,6 +95,7 @@ internal class LongLongScatterMap constructor(expectedElements: Int = 4) {
           values[slot] = value
           return previousValue
         }
+        // 哈希冲突
         slot = slot + 1 and mask
         existing = keys[slot]
       }
@@ -135,6 +136,10 @@ internal class LongLongScatterMap constructor(expectedElements: Int = 4) {
 
       return 0L
     }
+  }
+
+  fun getSizeOfMap(): Int {
+    return keys.size
   }
 
   /**

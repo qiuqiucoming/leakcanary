@@ -47,12 +47,15 @@ class ServiceWatcher(private val deletableObjectReporter: DeletableObjectReporte
       "ServiceWatcher already installed"
     }
     try {
+      // TODO 搞清楚service是如何监听其onDestroy事件的
       swapActivityThreadHandlerCallback { mCallback ->
+        // 清理环境时使用，以防止影响正常功能
         uninstallActivityThreadHandlerCallback = {
           swapActivityThreadHandlerCallback {
             mCallback
           }
         }
+        // 自定义的事件回调代理，只是代理STOP_SERVICE事件，其他事件还是扔给ActivityThread处理
         Handler.Callback { msg ->
           // https://github.com/square/leakcanary/issues/2114
           // On some Motorola devices (Moto E5 and G6), the msg.obj returns an ActivityClientRecord
@@ -64,6 +67,8 @@ class ServiceWatcher(private val deletableObjectReporter: DeletableObjectReporte
 
           if (msg.what == STOP_SERVICE) {
             val key = msg.obj as IBinder
+            // 将发生destory的service添加到列表里，因为从发生destory事件之后，系统还有很多步骤需要处理，因为为了防止提早触发
+            // 会干扰内存泄漏的检测结果，不再该事件处理开始时触发，而是放到该事件最后一个步骤即serviceDoneExecuting里触发检测
             activityThreadServices[key]?.let {
               onServicePreDestroy(key, it)
             }
@@ -72,6 +77,7 @@ class ServiceWatcher(private val deletableObjectReporter: DeletableObjectReporte
         }
       }
       swapActivityManager { activityManagerInterface, activityManagerInstance ->
+        // 同样先保存原有处理逻辑
         uninstallActivityManager = {
           swapActivityManager { _, _ ->
             activityManagerInstance
@@ -80,6 +86,7 @@ class ServiceWatcher(private val deletableObjectReporter: DeletableObjectReporte
         Proxy.newProxyInstance(
           activityManagerInterface.classLoader, arrayOf(activityManagerInterface)
         ) { _, method, args ->
+          // 在此真正地进行内存泄漏触发检测，方法的拦截，
           if (METHOD_SERVICE_DONE_EXECUTING == method.name) {
             val token = args!![0] as IBinder
             if (servicesToBeDestroyed.containsKey(token)) {
@@ -127,6 +134,7 @@ class ServiceWatcher(private val deletableObjectReporter: DeletableObjectReporte
     }
   }
 
+  // 找到系统ActivityThread中的事件处理回调函数，目的是替换成自定义的回调代理
   private fun swapActivityThreadHandlerCallback(swap: (Handler.Callback?) -> Handler.Callback?) {
     val mHField =
       activityThreadClass.getDeclaredField("mH").apply { isAccessible = true }
